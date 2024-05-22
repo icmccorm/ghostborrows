@@ -1,21 +1,23 @@
 use std::marker::PhantomData;
 
 #[derive(Copy, Clone)]
-pub(crate) struct Tag<'tag, V>(pub(crate) PhantomData<*mut &'tag V>);
+pub(crate) struct Tag<'tag>(pub(crate) PhantomData<*mut &'tag ()>);
 
 pub struct Token<'tag>(pub(crate) PhantomData<*mut &'tag ()>);
 
-pub trait AllowsRead<'tag> {}
-pub trait AllowsWrite<'tag> {}
+pub trait AllowsRead<'tag, T> {}
+pub trait AllowsWrite<'tag, T> {}
 
-pub struct Reserved<'tag>(pub(crate) PhantomData<*mut &'tag ()>);
-impl<'tag> AllowsRead<'tag> for Reserved<'tag> {}
+pub struct Reserved<'tag, T>(pub(crate) PhantomData<*mut &'tag T>);
+impl<'tag, T> AllowsRead<'tag, T> for Reserved<'tag, T> {}
 
 #[derive(Copy, Clone)]
-pub struct Frozen<'tag>(pub(crate) PhantomData<*mut &'tag ()>);
-impl<'tag> AllowsRead<'tag> for Frozen<'tag> {}
+pub struct Frozen<'tag, T>(pub(crate) PhantomData<*mut &'tag T>);
+impl<'tag, T> AllowsRead<'tag, T> for Frozen<'tag, T> {}
 
-pub struct Active<'tag>(pub(crate) PhantomData<*mut &'tag ()>);
-impl<'tag> AllowsRead<'tag> for Active<'tag> {}
-impl<'tag> AllowsWrite<'tag> for Active<'tag> {}
+pub struct Active<'tag, T>(pub(crate) PhantomData<*mut &'tag T>);
+impl<'tag, T> AllowsRead<'tag, T> for Active<'tag, T> {}
+impl<'tag, T> AllowsWrite<'tag, T> for Active<'tag, T> {}
 
+
+pub struct Dealloc<'tag, T>(pub(crate) PhantomData<*mut &'tag T>);

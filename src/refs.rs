@@ -2,30 +2,57 @@ use crate::perms::*;
 use crate::values::*;
 use std::alloc::{alloc, dealloc, Layout};
 use std::marker::PhantomData;
-pub struct OwnedValue<'tag, T: Value> {
-    pointer: Pointer<'tag, T>,
-    permission: Active<'tag>,
+
+pub struct OwnedValue<'tag, T> {
+    pointer: Pointer<'tag>,
+    permission: Active<'tag, T>,
+    dealloc: Dealloc<'tag, T>,
 }
-impl<'tag, T: Value> OwnedValue<'tag, T> {
+
+impl<'tag, T> OwnedValue<'tag, T> {
     pub fn new(value: T) -> Self {
         let layout = Layout::new::<T>();
         unsafe {
-            let data = alloc(layout) as *mut T;
-            std::ptr::write(data, value);
+            let data = alloc(layout);
+            std::ptr::write(data as *mut T, value);
             OwnedValue {
                 pointer: Pointer {
                     _tag: Tag(PhantomData),
                     data: data,
                 },
                 permission: Active(PhantomData),
+                dealloc: Dealloc(PhantomData),
             }
         }
     }
-    pub fn read(&self) -> T {
-        self.pointer.read(&self.permission)
+    pub fn into_raw(self) -> (Pointer<'tag>, Active<'tag, T>, Dealloc<'tag, T>) {
+        let pointer = Pointer {
+            _tag: Tag(PhantomData),
+            data: self.pointer.data,
+        };
+        let permission = Active(PhantomData);
+        let dealloc = Dealloc(PhantomData);
+        std::mem::forget(self);
+        (pointer, permission, dealloc)
     }
-    pub fn write(&mut self, value: T) {
-        self.pointer.write(&self.permission, value);
+
+    pub fn from_raw(
+        pointer: Pointer<'tag>,
+        permission: Active<'tag, T>,
+        dealloc: Dealloc<'tag, T>,
+    ) -> Self {
+        OwnedValue {
+            pointer,
+            permission,
+            dealloc,
+        }
+    }
+
+    pub fn read(&self, f: impl for<'b> FnOnce(&'b T)) {
+        self.pointer.read(&self.permission, f)
+    }
+    pub fn write(&mut self, f: impl for<'b> FnOnce(&'b mut T)) {
+        self.pointer.write(&self.permission, f);
     }
 
     pub fn borrow(&self, f: impl for<'retag> FnOnce(Ref<'retag, T>)) {
@@ -50,7 +77,7 @@ impl<'tag, T: Value> OwnedValue<'tag, T> {
     }
 }
 
-impl<'tag, T: Value> Drop for OwnedValue<'tag, T> {
+impl<'tag, T> Drop for OwnedValue<'tag, T> {
     fn drop(&mut self) {
         unsafe {
             let layout = Layout::new::<T>();
@@ -60,14 +87,14 @@ impl<'tag, T: Value> Drop for OwnedValue<'tag, T> {
 }
 
 #[derive(Copy, Clone)]
-pub struct Ref<'tag, T: Value> {
-    pub(crate) pointer: Pointer<'tag, T>,
-    pub(crate) permission: Frozen<'tag>,
+pub struct Ref<'tag, T> {
+    pub(crate) pointer: Pointer<'tag>,
+    pub(crate) permission: Frozen<'tag, T>,
 }
 
-impl<'tag, T: Value> Ref<'tag, T> {
-    pub fn read(&self) -> T {
-        self.pointer.read(&self.permission)
+impl<'tag, T> Ref<'tag, T> {
+    pub fn read(&self, f: impl for<'b> FnOnce(&'b T)) {
+        self.pointer.read(&self.permission, f)
     }
     pub fn borrow(&self, f: impl for<'retag> FnOnce(Ref<'retag, T>)) {
         let immutable = Ref {
@@ -81,12 +108,12 @@ impl<'tag, T: Value> Ref<'tag, T> {
     }
 }
 
-pub struct RefReserved<'tag, T: Value> {
-    pointer: Pointer<'tag, T>,
-    permission: Reserved<'tag>,
+pub struct RefReserved<'tag, T> {
+    pointer: Pointer<'tag>,
+    permission: Reserved<'tag, T>,
 }
 
-impl<'tag, T: Value> RefReserved<'tag, T> {
+impl<'tag, T> RefReserved<'tag, T> {
     pub fn activate(self, _token: Token<'tag>) -> RefMut<'tag, T> {
         RefMut {
             permission: Active(PhantomData),
@@ -94,8 +121,8 @@ impl<'tag, T: Value> RefReserved<'tag, T> {
             _token,
         }
     }
-    pub fn read(&self) -> T {
-        self.pointer.read(&self.permission)
+    pub fn read(&self, f: impl for<'b> FnOnce(&'b T)) {
+        self.pointer.read(&self.permission, f)
     }
     pub fn borrow_mut(
         &self,
@@ -113,12 +140,12 @@ impl<'tag, T: Value> RefReserved<'tag, T> {
         token
     }
 }
-impl<'tag, T: Value> RefMut<'tag, T> {
-    pub fn read(&self) -> T {
-        self.pointer.read(&self.permission)
+impl<'tag, T> RefMut<'tag, T> {
+    pub fn read(&self, f: impl for<'b> FnOnce(&'b T)) {
+        self.pointer.read(&self.permission, f)
     }
-    pub fn write(&self, value: T) {
-        self.pointer.write(&self.permission, value);
+    pub fn write(&self, f: impl for<'b> FnOnce(&'b mut T)) {
+        self.pointer.write(&self.permission, f)
     }
     pub fn borrow_mut(
         self,
@@ -136,9 +163,9 @@ impl<'tag, T: Value> RefMut<'tag, T> {
     }
 }
 
-pub struct RefMut<'tag, T: Value> {
-    pointer: Pointer<'tag, T>,
-    permission: Active<'tag>,
+pub struct RefMut<'tag, T> {
+    pointer: Pointer<'tag>,
+    permission: Active<'tag, T>,
     _token: Token<'tag>,
 }
 
@@ -149,8 +176,14 @@ mod tests {
     fn read_from_ref() {
         let value = OwnedValue::new(1);
         value.borrow(|r| {
-            assert!(r.read() == 1);
-            assert!(r.read() == value.read());
+            r.read(|b| {
+                assert!(*b == 1);
+            });
+            r.read(|br| {
+                value.read(|bv| {
+                    assert!(*br == *bv);
+                });
+            });
         });
     }
 
@@ -158,10 +191,14 @@ mod tests {
     fn write_from_ref() {
         let value = OwnedValue::new(1);
         value.borrow_mut(|ptr, token| {
-            assert!(ptr.read() == 1);
+            ptr.read(|b| {
+                assert!(*b == 1);
+            });
             let ptr_mut = ptr.activate(token);
-            ptr_mut.write(2);
-            assert!(ptr_mut.read() == 2);
+            ptr_mut.write(|bp| *bp = 2);
+            ptr_mut.read(|b| {
+                assert!(*b == 2);
+            });
         });
     }
 
@@ -171,9 +208,15 @@ mod tests {
         value.borrow(|r1| {
             value.borrow(|r2| {
                 value.borrow(|r3| {
-                    assert!(r1.read() == r2.read());
-                    assert!(r2.read() == r3.read());
-                    assert!(r3.read() == value.read());
+                    r1.read(|r1| {
+                        r2.read(|r2| {
+                            r3.read(|r3| {
+                                assert!(*r1 == *r2);
+                                assert!(*r2 == *r3);
+                                assert!(*r3 == 1);
+                            });
+                        });
+                    });
                 });
             });
         });
@@ -184,8 +227,11 @@ mod tests {
         let value = OwnedValue::new(1);
         value.borrow(|r1| {
             r1.borrow(|r2| {
-                assert!(r1.read() == r2.read());
-                assert!(r2.read() == value.read());
+                r1.read(|r1| {
+                    r2.read(|r2| {
+                        assert!(*r1 == *r2);
+                    });
+                });
             });
         });
     }
@@ -198,10 +244,17 @@ mod tests {
             /* Reserved */
             r1.borrow_mut(token1, |r2, token2| {
                 /* We allow foreign reads */
-                assert!(r1.read() == r2.read());
+                r1.read(|r1| {
+                    r2.read(|r2| {
+                        assert!(*r1 == *r2);
+                    });
+                });
+
                 let r2_mut = r2.activate(token2);
-                r2_mut.write(2);
-                assert!(r2_mut.read() == 2);
+                r2_mut.write(|rm| *rm = 2);
+                r2_mut.read(|rm| {
+                    assert!(*rm == 2);
+                });
 
                 /* BUT
                    we cannot allow multiple writes to occur.
@@ -213,12 +266,18 @@ mod tests {
     }
 
     #[test]
+    fn conflict() {
+        let value = OwnedValue::new(1);
+        value.borrow(|r| {})
+    }
+
+    #[test]
     fn incompatible_tokens() {
         let value = OwnedValue::new(1);
         value.borrow_mut(|r1, token1| {
             let activated = r1.activate(token1);
             activated.borrow_mut(|r2, token2| {
-                r2.activate(token2).write(3);
+                r2.activate(token2).write(|r2m| *r2m = 3);
             });
         });
     }

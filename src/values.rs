@@ -1,19 +1,17 @@
+
 use crate::perms::*;
-pub trait Value: Copy + Clone + Sized {}
-impl Value for i32 {}
-impl Value for bool {}
 
 #[derive(Copy, Clone)]
-pub struct Pointer<'tag, V: Value> {
-    pub(crate) _tag: Tag<'tag, V>,
-    pub(crate) data: *mut V,
+pub struct Pointer<'tag> {
+    pub(crate) _tag: Tag<'tag>,
+    pub(crate) data: *mut u8,
 }
 
-impl<'tag, T: Value> Pointer<'tag, T> {
-    pub fn read(&self, _perm: &dyn AllowsRead<'tag>) -> T {
-        unsafe { *self.data }
+impl<'tag> Pointer<'tag> {
+    pub fn read<T>(&self, _perm: &dyn AllowsRead<'tag, T>, f: impl for<'b> FnOnce(&'b T)) {
+        f(unsafe { &*(self.data as *mut T)})
     }
-    pub fn write(&self, _perm: &dyn AllowsWrite<'tag>, value: T) {
-        unsafe { *self.data = value }
+    pub fn write<T>(&self, _perm: &dyn AllowsWrite<'tag, T>, f: impl for<'b> FnOnce(&'b mut T)) {
+        f(unsafe { &mut *(self.data as *mut T) })
     }
 }
