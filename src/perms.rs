@@ -19,5 +19,4 @@ pub struct Active<'tag, T>(pub(crate) PhantomData<*mut &'tag T>);
 impl<'tag, T> AllowsRead<'tag, T> for Active<'tag, T> {}
 impl<'tag, T> AllowsWrite<'tag, T> for Active<'tag, T> {}
 
-
 pub struct Dealloc<'tag, T>(pub(crate) PhantomData<*mut &'tag T>);
