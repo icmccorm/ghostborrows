@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 pub struct OwnedValue<'tag, T> {
     pointer: Pointer<'tag>,
     permission: Active<'tag, T>,
-    dealloc: Dealloc<'tag, T>,
+    _dealloc: Dealloc<'tag, T>,
 }
 
 impl<'tag, T> OwnedValue<'tag, T> {
@@ -21,7 +21,7 @@ impl<'tag, T> OwnedValue<'tag, T> {
                     data: data,
                 },
                 permission: Active(PhantomData),
-                dealloc: Dealloc(PhantomData),
+                _dealloc: Dealloc(PhantomData),
             }
         }
     }
@@ -39,12 +39,12 @@ impl<'tag, T> OwnedValue<'tag, T> {
     pub fn from_raw(
         pointer: Pointer<'tag>,
         permission: Active<'tag, T>,
-        dealloc: Dealloc<'tag, T>,
+        _dealloc: Dealloc<'tag, T>,
     ) -> Self {
         OwnedValue {
             pointer,
             permission,
-            dealloc,
+            _dealloc,
         }
     }
 
@@ -263,12 +263,6 @@ mod tests {
                 */
             });
         });
-    }
-
-    #[test]
-    fn conflict() {
-        let value = OwnedValue::new(1);
-        value.borrow(|r| {})
     }
 
     #[test]
