@@ -33,76 +33,76 @@ impl<'tag, T: Value> Pointer<'tag, T> {
     fn write(&self, perm: &dyn AllowsRead<'tag, T>, value: T) {
         unsafe { *self.data = value }
     }
-    fn retag<'retag>(&self, tag: Tag<'retag, T>) -> Pointer<'retag, T>
-    where
-        'tag: 'retag,
-    {
-        Pointer {
-            data: self.data,
-            tag,
-        }
-    }
 }
 
-trait Readable<'tag, T: Value> {
-    fn read(&self) -> T;
-    fn borrow<'retag>(&'retag self) -> Ref<'retag, T>
-    where
-        'tag: 'retag;
-}
-
-trait Writeable<'tag, T: Value>: Readable<'tag, T> {
-    fn write(&self, value: T);
-    fn borrow_mut<'retag>(&'retag mut self) -> RefMut<'retag, T>
-    where
-        'tag: 'retag;
+#[derive(Copy, Clone)]
+struct Ref<'tag, T: Value> {
+    pointer: Pointer<'tag, T>,
+    permission: Frozen<'tag, T>,
 }
 
 macro_rules! impl_readable {
-    ($type:ty) => {
-        impl<'tag, T: Value> Readable<'tag, T> for $type {
+    ($type:ident) => {
+        impl<'tag, T: Value> Readable<'tag, T> for $type<'tag, T> {
             fn read(&self) -> T {
                 self.pointer.read(&self.permission)
             }
-
-            fn borrow<'retag>(&self) -> Ref<'retag, T>
-            where
-                'tag: 'retag,
-            {
-                Ref {
+            fn borrow<R>(&self, f: impl for<'retag> FnOnce(Ref<'retag, T>) -> R) -> R {
+                let immutable = Ref {
                     permission: Frozen(PhantomData),
-                    pointer: self.pointer.retag(Tag(PhantomData)),
-                }
+                    pointer: Pointer {
+                        tag: Tag(PhantomData),
+                        data: self.pointer.data,
+                    },
+                };
+                f(immutable)
             }
         }
     };
 }
+impl_readable!(Ref);
+
+trait Readable<'tag, T: Value> {
+    fn read(&self) -> T;
+    fn borrow<'lt, R>(&self, f: impl for<'retag> FnOnce(Ref<'retag, T>) -> R) -> R;
+}
+
+struct RefMut<'tag, T: Value> {
+    pointer: Pointer<'tag, T>,
+    permission: Active<'tag, T>,
+}
+trait Writeable<'tag, T: Value> {
+    fn write(&self, value: T);
+    fn borrow_mut<'lt, R>(&self, f: impl for<'retag> FnOnce(RefMut<'retag, T>) -> R) -> R;
+}
 macro_rules! impl_writeable {
-    ($type:ty) => {
-        impl_readable!($type);
-        impl<'tag, T: Value> Writeable<'tag, T> for $type {
+    ($type:ident) => {
+        impl<'tag, T: Value> Writeable<'tag, T> for $type<'tag, T> {
             fn write(&self, value: T) {
                 self.pointer.write(&self.permission, value)
             }
-
-            fn borrow_mut<'retag>(&mut self) -> RefMut<'retag, T>
-            where
-                'tag: 'retag,
-            {
-                RefMut {
+            fn borrow_mut<R>(&self, f: impl for<'retag> FnOnce(RefMut<'retag, T>) -> R) -> R {
+                let immutable = RefMut {
                     permission: Active(PhantomData),
-                    pointer: self.pointer.retag(Tag(PhantomData)),
-                }
+                    pointer: Pointer {
+                        tag: Tag(PhantomData),
+                        data: self.pointer.data,
+                    },
+                };
+                f(immutable)
             }
         }
     };
 }
+impl_readable!(RefMut);
+impl_writeable!(RefMut);
 
 struct OwnedValue<'tag, T: Value> {
     pointer: Pointer<'tag, T>,
     permission: Active<'tag, T>,
 }
-impl_writeable!(OwnedValue<'tag, T>);
+impl_readable!(OwnedValue);
+impl_writeable!(OwnedValue);
 
 impl<'tag, T: Value> OwnedValue<'tag, T> {
     fn new(value: T) -> Self {
@@ -130,107 +130,62 @@ impl<'tag, T: Value> Drop for OwnedValue<'tag, T> {
     }
 }
 
-#[derive(Copy, Clone)]
-struct Ref<'tag, T: Value> {
-    pointer: Pointer<'tag, T>,
-    permission: Frozen<'tag, T>,
-}
-
-impl_readable!(Ref<'tag, T>);
-
-struct RefMut<'tag, T: Value> {
-    pointer: Pointer<'tag, T>,
-    permission: Active<'tag, T>,
-}
-impl_writeable!(RefMut<'tag, T>);
-
 #[cfg(test)]
 mod tests {
-
-    use super::*;
-
-    #[test]
-    fn create() {
-        let _ = OwnedValue::new(1);
-    }
-
-    #[test]
-    fn create_ref() {
-        let value = OwnedValue::new(1);
-        let _ = value.borrow();
-    }
-
+    use crate::*;
     #[test]
     fn read_from_ref() {
         let value = OwnedValue::new(1);
-        let reference = value.borrow();
-        assert!(reference.read() == 1);
-        assert!(reference.read() == value.read());
+        value.borrow(|r| {
+            assert!(r.read() == 1);
+            assert!(r.read() == value.read());
+        });
     }
-
-    #[test]
-    fn create_ref_mut() {
-        let mut value = OwnedValue::new(1);
-        let _ = value.borrow_mut();
-    }
-    #[test]
-    fn write_from_ref_mut() {
-        let mut value = OwnedValue::new(1);
-        let writeable = value.borrow_mut();
-        writeable.write(0);
-        assert!(writeable.read() == 0);
-        assert!(value.read() == 0);
+    fn write_from_ref() {
+        let value = OwnedValue::new(1);
+        value.borrow_mut(|r| {
+            assert!(r.read() == 1);
+            assert!(r.read() == value.read());
+            r.write(2);
+            assert!(r.read() == 2);
+        });
     }
 
     #[test]
     fn can_create_and_use_multiple_refs() {
         let value = OwnedValue::new(1);
-        let ref_1 = value.borrow();
-        let ref_2 = value.borrow();
-        let ref_3 = value.borrow();
-        assert!(ref_1.read() == ref_2.read());
-        assert!(ref_2.read() == ref_3.read());
-        assert!(ref_3.read() == value.read());
+        value.borrow(|r1| {
+            value.borrow(|r2| {
+                value.borrow(|r3| {
+                    assert!(r1.read() == r2.read());
+                    assert!(r2.read() == r3.read());
+                    assert!(r3.read() == value.read());
+                });
+            });
+        });
     }
 
     #[test]
     fn immutable_reborrow() {
-        let mut value = OwnedValue::new(1);
-        let ref_1 = value.borrow();
-        let ref_1_1 = ref_1.borrow();
-        assert!(ref_1_1.read() == ref_1.read());
-        assert!(ref_1_1.read() == value.read());
-        
-        let ref_mut_1 = value.borrow_mut();
-        let ref_mut_1_1 = ref_mut_1.borrow();
-        assert!(ref_mut_1_1.read() == value.read());
+        let value = OwnedValue::new(1);
+        value.borrow(|r1| {
+            r1.borrow(|r2| {
+                assert!(r1.read() == r2.read());
+                assert!(r2.read() == value.read());
+            });
+        });
     }
 
     #[test]
     fn mutable_reborrow() {
-        let mut value = OwnedValue::new(1);
-        /*
-            Limitation: since we want the borrow checker
-            to statically prevent aliasing violations, we have
-            to declare each `RefMut` as 'mut', even if we're not
-            actually mutating the reference itself. 
-
-            This is due to the signature of `borrow_mut`:
-            ```
-            fn borrow_mut<'retag>(&'retag mut self) 
-            ```
-            We must receive &mut, which requires the borrowed
-            location to be mutable, in order to statically enforce
-            aliasing XOR mutability. RefCell implements a similar method
-            that takes &self, but it only works because RefCell checks
-            borrow rules dynamically. 
-
-            If Rust had a construct for a unique, read-only reference, then
-            we could implement this.
-         */
-        let mut ref_mut_1 = value.borrow_mut();
-        let ref_mut_1_1 = ref_mut_1.borrow_mut();
-        ref_mut_1_1.write(2);
-        assert!(ref_mut_1_1.read() == value.read())
+        let value = OwnedValue::new(1);
+        value.borrow_mut(|r1| {
+            r1.borrow_mut(|r2| {
+                assert!(r1.read() == r2.read());
+                assert!(r2.read() == value.read());
+                r2.write(2);
+                assert!(r2.read() == value.read());
+            });
+        });
     }
 }
