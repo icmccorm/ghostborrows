@@ -17,12 +17,14 @@ jobs:
     steps:    
     - uses: actions/checkout@v4
     - run: rustup default nightly
-    - run: rustup component add miri rustfmt
-    - name: Format
-      run: cargo fmt --check
+    - run: rustup component add miri rustfmt clippy
     - name: Build
       run: cargo build --verbose
-    - name: Test
-      run: cargo test --verbose
-    - name: Miri
+    - name: Format
+      run: cargo fmt --check
+    - name: Clippy
+      run: cargo clippy
+    - name: Unit Tests
       run: MIRIFLAGS="-Zmiri-tree-borrows" cargo miri test --verbose refs::tests
+    - name: UI Tests
+      run: cargo test --verbose ui

@@ -18,7 +18,7 @@ impl<'tag, T> Value<'tag, T> {
             Value {
                 pointer: Pointer {
                     _tag: Tag(PhantomData),
-                    data: data,
+                    data
                 },
                 permission: Write(Token(PhantomData)),
                 _dealloc: Dealloc(PhantomData),
@@ -81,7 +81,7 @@ impl<'tag, T> Drop for Value<'tag, T> {
     fn drop(&mut self) {
         unsafe {
             let layout = Layout::new::<T>();
-            dealloc(self.pointer.data as *mut u8, layout);
+            dealloc(self.pointer.data, layout);
         }
     }
 }
@@ -274,6 +274,4 @@ mod tests {
             });
         });
     }
-
-
 }
