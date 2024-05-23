@@ -41,11 +41,8 @@ where
     });
     let (child, child_perm, child_dealloc) = child_allocation.into_raw();
 
-    parent.write(perm, |p| {
-        p.child = Some((child, child_perm, child_dealloc));
-    });
+    parent.as_mut(perm).child = Some((child, child_perm, child_dealloc));
 }
-
 
 fn main() {
     let _ = HeapWrapper::new();

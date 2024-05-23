@@ -1,12 +1,39 @@
 use crate::perms::*;
-use crate::values::*;
 use std::alloc::{alloc, dealloc, Layout};
 use std::marker::PhantomData;
+use std::ops::{Deref, DerefMut};
+
+#[derive(Copy, Clone)]
+pub struct Pointer<'tag> {
+    pub(crate) _tag: Tag<'tag>,
+    data: *mut u8,
+}
+impl<'tag> Pointer<'tag> {
+    pub fn as_ref<T>(&self, _: &dyn AllowsRead<'tag, T>) -> &T {
+        unsafe { &*(self.data as *const T) }
+    }
+    pub fn as_mut<T>(&self, _: &dyn AllowsWrite<'tag, T>) -> &mut T {
+        unsafe { &mut *(self.data as *mut T) }
+    }
+}
 
 pub struct Value<'tag, T> {
     pointer: Pointer<'tag>,
     permission: Write<'tag, T>,
     _dealloc: Dealloc<'tag, T>,
+}
+
+impl<'tag, T> Deref for Value<'tag, T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        self.pointer.as_ref(&self.permission)
+    }
+}
+
+impl<'tag, T> DerefMut for Value<'tag, T> {
+    fn deref_mut(&mut self) -> &mut T {
+        self.pointer.as_mut(&self.permission)
+    }
 }
 
 impl<'tag, T> Value<'tag, T> {
@@ -48,13 +75,6 @@ impl<'tag, T> Value<'tag, T> {
         }
     }
 
-    pub fn read(&self, f: impl for<'b> FnOnce(&'b T)) {
-        self.pointer.read(&self.permission, f)
-    }
-    pub fn write(&mut self, f: impl for<'b> FnOnce(&'b mut T)) {
-        self.pointer.write(&self.permission, f);
-    }
-
     pub fn borrow(&self, f: impl for<'retag> FnOnce(Ref<'retag, T>)) {
         let immutable = Ref {
             permission: Read(PhantomData),
@@ -92,10 +112,14 @@ pub struct Ref<'tag, T> {
     pub(crate) permission: Read<'tag, T>,
 }
 
-impl<'tag, T> Ref<'tag, T> {
-    pub fn read(&self, f: impl for<'b> FnOnce(&'b T)) {
-        self.pointer.read(&self.permission, f)
+impl<'tag, T> Deref for Ref<'tag, T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        self.pointer.as_ref(&self.permission)
     }
+}
+
+impl<'tag, T> Ref<'tag, T> {
     pub fn borrow(&self, f: impl for<'retag> FnOnce(Ref<'retag, T>)) {
         let immutable = Ref {
             permission: Read(PhantomData),
@@ -116,15 +140,19 @@ pub struct RefReserved<'tag, T> {
     permission: Reserved<'tag, T>,
 }
 
+impl<'tag, T> Deref for RefReserved<'tag, T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        self.pointer.as_ref(&self.permission)
+    }
+}
+
 impl<'tag, T> RefReserved<'tag, T> {
     pub fn activate(self, _token: Token<'tag, T>) -> RefMut<'tag, T> {
         RefMut {
             permission: Write(Token(PhantomData)),
             pointer: self.pointer,
         }
-    }
-    pub fn read(&self, f: impl for<'b> FnOnce(&'b T)) {
-        self.pointer.read(&self.permission, f)
     }
     pub fn borrow_mut(
         &self,
@@ -146,14 +174,20 @@ impl<'tag, T> RefReserved<'tag, T> {
         (self.pointer, self.permission)
     }
 }
-impl<'tag, T> RefMut<'tag, T> {
-    pub fn read(&self, f: impl for<'b> FnOnce(&'b T)) {
-        self.pointer.read(&self.permission, f)
-    }
-    pub fn write(&self, f: impl for<'b> FnOnce(&'b mut T)) {
-        self.pointer.write(&self.permission, f)
-    }
 
+pub struct RefMut<'tag, T> {
+    pointer: Pointer<'tag>,
+    permission: Write<'tag, T>,
+}
+
+impl<'tag, T> Deref for RefMut<'tag, T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        self.pointer.as_ref(&self.permission)
+    }
+}
+
+impl<'tag, T> RefMut<'tag, T> {
     pub fn borrow_mut(
         self,
         f: impl for<'retag> FnOnce(RefReserved<'retag, T>, Token<'retag, T>),
@@ -172,11 +206,10 @@ impl<'tag, T> RefMut<'tag, T> {
     pub fn split(self) -> (Pointer<'tag>, Write<'tag, T>) {
         (self.pointer, self.permission)
     }
-}
 
-pub struct RefMut<'tag, T> {
-    pointer: Pointer<'tag>,
-    permission: Write<'tag, T>,
+    pub fn as_mut(&self) -> &mut T {
+        self.pointer.as_mut(&self.permission)
+    }
 }
 
 #[cfg(test)]
@@ -186,14 +219,8 @@ mod tests {
     fn read_from_ref() {
         let value = Value::new(1);
         value.borrow(|r| {
-            r.read(|b| {
-                assert!(*b == 1);
-            });
-            r.read(|br| {
-                value.read(|bv| {
-                    assert!(*br == *bv);
-                });
-            });
+            assert!(*r == 1);
+            assert!(*r == *value);
         });
     }
 
@@ -201,14 +228,10 @@ mod tests {
     fn write_from_ref() {
         let value = Value::new(1);
         value.borrow_mut(|ptr, token| {
-            ptr.read(|b| {
-                assert!(*b == 1);
-            });
+            assert!(*ptr == 1);
             let ptr_mut = ptr.activate(token);
-            ptr_mut.write(|bp| *bp = 2);
-            ptr_mut.read(|b| {
-                assert!(*b == 2);
-            });
+            *ptr_mut.as_mut() = 3;
+            assert!(*ptr_mut == 3);
         });
     }
 
@@ -218,15 +241,9 @@ mod tests {
         value.borrow(|r1| {
             value.borrow(|r2| {
                 value.borrow(|r3| {
-                    r1.read(|r1| {
-                        r2.read(|r2| {
-                            r3.read(|r3| {
-                                assert!(*r1 == *r2);
-                                assert!(*r2 == *r3);
-                                assert!(*r3 == 1);
-                            });
-                        });
-                    });
+                    assert!(*r1 == *r2);
+                    assert!(*r2 == *r3);
+                    assert!(*r3 == 1);
                 });
             });
         });
@@ -237,11 +254,7 @@ mod tests {
         let value = Value::new(1);
         value.borrow(|r1| {
             r1.borrow(|r2| {
-                r1.read(|r1| {
-                    r2.read(|r2| {
-                        assert!(*r1 == *r2);
-                    });
-                });
+                assert!(*r1 == *r2);
             });
         });
     }
@@ -249,29 +262,16 @@ mod tests {
     #[test]
     fn mutable_reborrow() {
         let value = Value::new(1);
-        /* Reserved */
         value.borrow_mut(|r1, token1| {
-            /* Reserved */
             r1.borrow_mut(token1, |r2, token2| {
                 /* We allow foreign reads */
-                r1.read(|r1| {
-                    r2.read(|r2| {
-                        assert!(*r1 == *r2);
-                    });
-                });
-
+                assert!(*r1 == *r2);
                 let r2_mut = r2.activate(token2);
-                r2_mut.write(|rm| *rm = 2);
-                r2_mut.read(|rm| {
-                    assert!(*rm == 2);
-                });
-
-                /* BUT
-                   we cannot allow multiple writes to occur.
-                   if I consume token2 that activate the borrow,
-                   I need to ensure that token1 is destroyed.
-                */
+                *r2_mut.as_mut() = 2;
+                assert!(*r2_mut == 2);
             });
         });
     }
+    #[test]
+    fn split_and_compose() {}
 }
