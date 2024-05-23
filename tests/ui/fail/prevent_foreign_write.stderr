@@ -7,8 +7,8 @@ error[E0382]: borrow of moved value: `activated`
   |                     -          ^^^^^^ value borrowed here after move
   |  ___________________|
   | |
-7 | |             activated.write(|r1m| *r1m = 2);
-  | |             --------- borrow occurs due to use in closure
+7 | |             *activated.as_mut() = 2;
+  | |              --------- borrow occurs due to use in closure
 8 | |         });
   | |__________- `activated` moved due to this method call
   |

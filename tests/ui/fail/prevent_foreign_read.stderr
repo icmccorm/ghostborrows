@@ -1,19 +1,17 @@
-error[E0382]: borrow of moved value: `activated`
+error[E0382]: borrow of moved value: `r1`
  --> tests/ui/fail/prevent_foreign_read.rs:6:30
   |
-5 |           let activated = r1.activate(token1);
-  |               --------- move occurs because `activated` has type `ghostborrows::RefMut<'_, i32>`, which does not implement the `Copy` trait
-6 |           activated.borrow_mut(|_, _| {
-  |                     -          ^^^^^^ value borrowed here after move
-  |  ___________________|
-  | |
-7 | |             activated.read(|r1m| print!("{}", *r1m) );
-  | |             --------- borrow occurs due to use in closure
-8 | |         });
-  | |__________- `activated` moved due to this method call
+4 |     Value::new(1).borrow_mut(|r1, token1| {
+  |                               -- move occurs because `r1` has type `RefReserved<'_, i32>`, which does not implement the `Copy` trait
+5 |         let activated = r1.activate(token1);
+  |                            ---------------- `r1` moved due to this method call
+6 |         activated.borrow_mut(|_, _| {
+  |                              ^^^^^^ value borrowed here after move
+7 |             print!("{}", *r1);
+  |                           -- borrow occurs due to use in closure
   |
-note: `ghostborrows::RefMut::<'tag, T>::borrow_mut` takes ownership of the receiver `self`, which moves `activated`
+note: `RefReserved::<'tag, T>::activate` takes ownership of the receiver `self`, which moves `r1`
  --> src/refs.rs
   |
-  |         self,
-  |         ^^^^
+  |     pub fn activate(self, _token: Token<'tag, T>) -> RefMut<'tag, T> {
+  |                     ^^^^

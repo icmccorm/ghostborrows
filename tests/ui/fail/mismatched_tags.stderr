@@ -1,0 +1,29 @@
+error[E0521]: borrowed data escapes outside of closure
+ --> tests/ui/fail/mismatched_tags.rs:8:30
+  |
+5 |     value.borrow(|r1| {
+  |                   -- `r1` declared here, outside of the closure body
+6 |         r1.borrow(|r2| {
+  |                    -- `r2` is a reference that is only valid in the closure body
+7 |             let (ptr1, _) = r1.split();
+8 |             let (_, perm2) = r2.split();
+  |                              ^^^^^^^^^^ `r2` escapes the closure body here
+  |
+  = note: requirement occurs because of the type `ghostborrows::Ref<'_, i32>`, which makes the generic argument `'_` invariant
+  = note: the struct `ghostborrows::Ref<'tag, T>` is invariant over the parameter `'tag`
+  = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance
+
+error[E0521]: borrowed data escapes outside of closure
+ --> tests/ui/fail/mismatched_tags.rs:7:29
+  |
+5 |     value.borrow(|r1| {
+  |                   --
+  |                   |
+  |                   `r1` is a reference that is only valid in the closure body
+  |                   has type `ghostborrows::Ref<'1, i32>`
+6 |         r1.borrow(|r2| {
+7 |             let (ptr1, _) = r1.split();
+  |                             ^^^^^^^^^^
+  |                             |
+  |                             `r1` escapes the closure body here
+  |                             argument requires that `'1` must outlive `'static`

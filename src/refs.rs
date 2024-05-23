@@ -12,6 +12,8 @@ impl<'tag> Pointer<'tag> {
     pub fn as_ref<T>(&self, _: &dyn AllowsRead<'tag, T>) -> &T {
         unsafe { &*(self.data as *const T) }
     }
+
+    #[allow(clippy::mut_from_ref)]
     pub fn as_mut<T>(&self, _: &dyn AllowsWrite<'tag, T>) -> &mut T {
         unsafe { &mut *(self.data as *mut T) }
     }
@@ -118,7 +120,17 @@ impl<'tag, T> Deref for Ref<'tag, T> {
         self.pointer.as_ref(&self.permission)
     }
 }
-
+impl<'tag, T> From<&T> for Ref<'tag, T> {
+    fn from(t: &T) -> Self {
+        Ref {
+            permission: Read(PhantomData),
+            pointer: Pointer {
+                _tag: Tag(PhantomData),
+                data: t as *const T as *mut u8,
+            },
+        }
+    }
+}
 impl<'tag, T> Ref<'tag, T> {
     pub fn borrow(&self, f: impl for<'retag> FnOnce(Ref<'retag, T>)) {
         let immutable = Ref {
@@ -184,6 +196,18 @@ impl<'tag, T> Deref for RefMut<'tag, T> {
     type Target = T;
     fn deref(&self) -> &T {
         self.pointer.as_ref(&self.permission)
+    }
+}
+
+impl<'tag, T> From<&mut T> for RefMut<'tag, T> {
+    fn from(t: &mut T) -> Self {
+        RefMut {
+            permission: Write(Token(PhantomData)),
+            pointer: Pointer {
+                _tag: Tag(PhantomData),
+                data: t as *mut T as *mut u8,
+            },
+        }
     }
 }
 
@@ -272,6 +296,4 @@ mod tests {
             });
         });
     }
-    #[test]
-    fn split_and_compose() {}
 }
