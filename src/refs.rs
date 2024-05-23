@@ -3,19 +3,19 @@ use crate::values::*;
 use std::alloc::{alloc, dealloc, Layout};
 use std::marker::PhantomData;
 
-pub struct OwnedValue<'tag, T> {
+pub struct Value<'tag, T> {
     pointer: Pointer<'tag>,
     permission: Write<'tag, T>,
     _dealloc: Dealloc<'tag, T>,
 }
 
-impl<'tag, T> OwnedValue<'tag, T> {
+impl<'tag, T> Value<'tag, T> {
     pub fn new(value: T) -> Self {
         let layout = Layout::new::<T>();
         unsafe {
             let data = alloc(layout);
             std::ptr::write(data as *mut T, value);
-            OwnedValue {
+            Value {
                 pointer: Pointer {
                     _tag: Tag(PhantomData),
                     data: data,
@@ -41,7 +41,7 @@ impl<'tag, T> OwnedValue<'tag, T> {
         permission: Write<'tag, T>,
         _dealloc: Dealloc<'tag, T>,
     ) -> Self {
-        OwnedValue {
+        Value {
             pointer,
             permission,
             _dealloc,
@@ -77,7 +77,7 @@ impl<'tag, T> OwnedValue<'tag, T> {
     }
 }
 
-impl<'tag, T> Drop for OwnedValue<'tag, T> {
+impl<'tag, T> Drop for Value<'tag, T> {
     fn drop(&mut self) {
         unsafe {
             let layout = Layout::new::<T>();
@@ -184,7 +184,7 @@ mod tests {
     use crate::refs::*;
     #[test]
     fn read_from_ref() {
-        let value = OwnedValue::new(1);
+        let value = Value::new(1);
         value.borrow(|r| {
             r.read(|b| {
                 assert!(*b == 1);
@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     fn write_from_ref() {
-        let value = OwnedValue::new(1);
+        let value = Value::new(1);
         value.borrow_mut(|ptr, token| {
             ptr.read(|b| {
                 assert!(*b == 1);
@@ -214,7 +214,7 @@ mod tests {
 
     #[test]
     fn can_create_and_use_multiple_refs() {
-        let value = OwnedValue::new(1);
+        let value = Value::new(1);
         value.borrow(|r1| {
             value.borrow(|r2| {
                 value.borrow(|r3| {
@@ -234,7 +234,7 @@ mod tests {
 
     #[test]
     fn immutable_reborrow() {
-        let value = OwnedValue::new(1);
+        let value = Value::new(1);
         value.borrow(|r1| {
             r1.borrow(|r2| {
                 r1.read(|r1| {
@@ -248,7 +248,7 @@ mod tests {
 
     #[test]
     fn mutable_reborrow() {
-        let value = OwnedValue::new(1);
+        let value = Value::new(1);
         /* Reserved */
         value.borrow_mut(|r1, token1| {
             /* Reserved */
@@ -277,7 +277,7 @@ mod tests {
 
     #[test]
     fn incompatible_tokens() {
-        let value = OwnedValue::new(1);
+        let value = Value::new(1);
         value.borrow_mut(|r1, token1| {
             let activated = r1.activate(token1);
             activated.borrow_mut(|r2, token2| {
