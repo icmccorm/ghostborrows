@@ -15,6 +15,7 @@ jobs:
     env:
       RUSTFLAGS: -D warnings
     steps:    
+    - uses: actions/checkout@v4
     - name: Build
       run: cargo build --verbose
     - name: Format
