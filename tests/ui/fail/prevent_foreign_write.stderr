@@ -1,5 +1,5 @@
 error[E0382]: borrow of moved value: `activated`
- --> tests/ui/prevent_foreign_read.rs:6:30
+ --> tests/ui/fail/prevent_foreign_write.rs:6:30
   |
 5 |           let activated = r1.activate(token1);
   |               --------- move occurs because `activated` has type `ghostborrows::RefMut<'_, i32>`, which does not implement the `Copy` trait
@@ -7,7 +7,7 @@ error[E0382]: borrow of moved value: `activated`
   |                     -          ^^^^^^ value borrowed here after move
   |  ___________________|
   | |
-7 | |             activated.read(|r1m| print!("{}", *r1m) );
+7 | |             activated.write(|r1m| *r1m = 2);
   | |             --------- borrow occurs due to use in closure
 8 | |         });
   | |__________- `activated` moved due to this method call

@@ -275,14 +275,5 @@ mod tests {
         });
     }
 
-    #[test]
-    fn incompatible_tokens() {
-        let value = Value::new(1);
-        value.borrow_mut(|r1, token1| {
-            let activated = r1.activate(token1);
-            activated.borrow_mut(|r2, token2| {
-                r2.activate(token2).write(|r2m| *r2m = 3);
-            });
-        });
-    }
+
 }

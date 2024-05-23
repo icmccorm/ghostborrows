@@ -16,9 +16,13 @@ jobs:
       RUSTFLAGS: -D warnings
     steps:    
     - uses: actions/checkout@v4
+    - run: rustup update nightly && rustup default nightly
+    - run: rustup component add miri
     - name: Format
       run: cargo fmt --check
     - name: Build
       run: cargo build --verbose
-    - name: Run tests
+    - name: Test
       run: cargo test --verbose
+    - name: Miri
+      run: cargo miri test --verbose refs::tests

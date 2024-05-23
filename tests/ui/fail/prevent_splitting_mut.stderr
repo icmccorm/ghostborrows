@@ -1,0 +1,17 @@
+error[E0382]: use of moved value: `r1`
+ --> tests/ui/fail/prevent_splitting_mut.rs:7:30
+  |
+5 |     value.borrow_mut(|r1, token1| {
+  |                       -- move occurs because `r1` has type `RefReserved<'_, i32>`, which does not implement the `Copy` trait
+6 |         let activated = r1.activate(token1);
+  |                            ---------------- `r1` moved due to this method call
+7 |         activated.borrow_mut(|_, _| {
+  |                              ^^^^^^ value used here after move
+8 |             let (_, _) = r1.split();
+  |                          -- use occurs due to use in closure
+  |
+note: `RefReserved::<'tag, T>::activate` takes ownership of the receiver `self`, which moves `r1`
+ --> src/refs.rs
+  |
+  |     pub fn activate(self, _token: Token<'tag, T>) -> RefMut<'tag, T> {
+  |                     ^^^^
