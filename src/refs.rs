@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 
 pub struct OwnedValue<'tag, T> {
     pointer: Pointer<'tag>,
-    permission: Active<'tag, T>,
+    permission: Write<'tag, T>,
     _dealloc: Dealloc<'tag, T>,
 }
 
@@ -20,17 +20,17 @@ impl<'tag, T> OwnedValue<'tag, T> {
                     _tag: Tag(PhantomData),
                     data: data,
                 },
-                permission: Active(PhantomData),
+                permission: Write(PhantomData),
                 _dealloc: Dealloc(PhantomData),
             }
         }
     }
-    pub fn into_raw(self) -> (Pointer<'tag>, Active<'tag, T>, Dealloc<'tag, T>) {
+    pub fn into_raw(self) -> (Pointer<'tag>, Write<'tag, T>, Dealloc<'tag, T>) {
         let pointer = Pointer {
             _tag: Tag(PhantomData),
             data: self.pointer.data,
         };
-        let permission = Active(PhantomData);
+        let permission = Write(PhantomData);
         let dealloc = Dealloc(PhantomData);
         std::mem::forget(self);
         (pointer, permission, dealloc)
@@ -38,7 +38,7 @@ impl<'tag, T> OwnedValue<'tag, T> {
 
     pub fn from_raw(
         pointer: Pointer<'tag>,
-        permission: Active<'tag, T>,
+        permission: Write<'tag, T>,
         _dealloc: Dealloc<'tag, T>,
     ) -> Self {
         OwnedValue {
@@ -57,7 +57,7 @@ impl<'tag, T> OwnedValue<'tag, T> {
 
     pub fn borrow(&self, f: impl for<'retag> FnOnce(Ref<'retag, T>)) {
         let immutable = Ref {
-            permission: Frozen(PhantomData),
+            permission: Read(PhantomData),
             pointer: Pointer {
                 _tag: Tag(PhantomData),
                 data: self.pointer.data,
@@ -89,7 +89,7 @@ impl<'tag, T> Drop for OwnedValue<'tag, T> {
 #[derive(Copy, Clone)]
 pub struct Ref<'tag, T> {
     pub(crate) pointer: Pointer<'tag>,
-    pub(crate) permission: Frozen<'tag, T>,
+    pub(crate) permission: Read<'tag, T>,
 }
 
 impl<'tag, T> Ref<'tag, T> {
@@ -98,7 +98,7 @@ impl<'tag, T> Ref<'tag, T> {
     }
     pub fn borrow(&self, f: impl for<'retag> FnOnce(Ref<'retag, T>)) {
         let immutable = Ref {
-            permission: Frozen(PhantomData),
+            permission: Read(PhantomData),
             pointer: Pointer {
                 _tag: Tag(PhantomData),
                 data: self.pointer.data,
@@ -116,7 +116,7 @@ pub struct RefReserved<'tag, T> {
 impl<'tag, T> RefReserved<'tag, T> {
     pub fn activate(self, _token: Token<'tag>) -> RefMut<'tag, T> {
         RefMut {
-            permission: Active(PhantomData),
+            permission: Write(PhantomData),
             pointer: self.pointer,
             _token,
         }
@@ -165,7 +165,7 @@ impl<'tag, T> RefMut<'tag, T> {
 
 pub struct RefMut<'tag, T> {
     pointer: Pointer<'tag>,
-    permission: Active<'tag, T>,
+    permission: Write<'tag, T>,
     _token: Token<'tag>,
 }
 
@@ -275,4 +275,6 @@ mod tests {
             });
         });
     }
+
+
 }
