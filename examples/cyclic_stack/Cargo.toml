@@ -1,7 +1,0 @@
-[package]
-name = "cyclic"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-ghostborrows = { path = "../../" }
