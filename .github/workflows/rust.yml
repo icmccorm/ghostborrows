@@ -16,7 +16,7 @@ jobs:
       RUSTFLAGS: -D warnings
     steps:    
     - uses: actions/checkout@v4
-    - run: rustup update nightly && rustup default nightly
+    - run: rustup default nightly
     - run: rustup component add miri rustfmt
     - name: Format
       run: cargo fmt --check
