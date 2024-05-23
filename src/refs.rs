@@ -18,7 +18,7 @@ impl<'tag, T> Value<'tag, T> {
             Value {
                 pointer: Pointer {
                     _tag: Tag(PhantomData),
-                    data
+                    data,
                 },
                 permission: Write(Token(PhantomData)),
                 _dealloc: Dealloc(PhantomData),
