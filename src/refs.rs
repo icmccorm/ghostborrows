@@ -20,7 +20,7 @@ impl<'tag, T> OwnedValue<'tag, T> {
                     _tag: Tag(PhantomData),
                     data: data,
                 },
-                permission: Write(PhantomData),
+                permission: Write(Token(PhantomData)),
                 _dealloc: Dealloc(PhantomData),
             }
         }
@@ -30,7 +30,7 @@ impl<'tag, T> OwnedValue<'tag, T> {
             _tag: Tag(PhantomData),
             data: self.pointer.data,
         };
-        let permission = Write(PhantomData);
+        let permission = Write(Token(PhantomData));
         let dealloc = Dealloc(PhantomData);
         std::mem::forget(self);
         (pointer, permission, dealloc)
@@ -65,7 +65,7 @@ impl<'tag, T> OwnedValue<'tag, T> {
         };
         f(immutable);
     }
-    pub fn borrow_mut(&self, f: impl for<'retag> FnOnce(RefReserved<'retag, T>, Token<'retag>)) {
+    pub fn borrow_mut(&self, f: impl for<'retag> FnOnce(RefReserved<'retag, T>, Token<'retag, T>)) {
         let immutable = RefReserved {
             permission: Reserved(PhantomData),
             pointer: Pointer {
@@ -106,6 +106,9 @@ impl<'tag, T> Ref<'tag, T> {
         };
         f(immutable);
     }
+    pub fn split(self) -> (Pointer<'tag>, Read<'tag, T>) {
+        (self.pointer, self.permission)
+    }
 }
 
 pub struct RefReserved<'tag, T> {
@@ -114,11 +117,10 @@ pub struct RefReserved<'tag, T> {
 }
 
 impl<'tag, T> RefReserved<'tag, T> {
-    pub fn activate(self, _token: Token<'tag>) -> RefMut<'tag, T> {
+    pub fn activate(self, _token: Token<'tag, T>) -> RefMut<'tag, T> {
         RefMut {
-            permission: Write(PhantomData),
+            permission: Write(Token(PhantomData)),
             pointer: self.pointer,
-            _token,
         }
     }
     pub fn read(&self, f: impl for<'b> FnOnce(&'b T)) {
@@ -126,9 +128,9 @@ impl<'tag, T> RefReserved<'tag, T> {
     }
     pub fn borrow_mut(
         &self,
-        token: Token<'tag>,
-        f: impl for<'retag> FnOnce(RefReserved<'retag, T>, Token<'retag>),
-    ) -> Token<'tag> {
+        token: Token<'tag, T>,
+        f: impl for<'retag> FnOnce(RefReserved<'retag, T>, Token<'retag, T>),
+    ) -> Token<'tag, T> {
         let immutable = RefReserved {
             permission: Reserved(PhantomData),
             pointer: Pointer {
@@ -139,6 +141,10 @@ impl<'tag, T> RefReserved<'tag, T> {
         f(immutable, Token(PhantomData));
         token
     }
+
+    pub fn split(self) -> (Pointer<'tag>, Reserved<'tag, T>) {
+        (self.pointer, self.permission)
+    }
 }
 impl<'tag, T> RefMut<'tag, T> {
     pub fn read(&self, f: impl for<'b> FnOnce(&'b T)) {
@@ -147,9 +153,10 @@ impl<'tag, T> RefMut<'tag, T> {
     pub fn write(&self, f: impl for<'b> FnOnce(&'b mut T)) {
         self.pointer.write(&self.permission, f)
     }
+
     pub fn borrow_mut(
         self,
-        f: impl for<'retag> FnOnce(RefReserved<'retag, T>, Token<'retag>),
+        f: impl for<'retag> FnOnce(RefReserved<'retag, T>, Token<'retag, T>),
     ) -> Self {
         let immutable = RefReserved {
             permission: Reserved(PhantomData),
@@ -161,12 +168,15 @@ impl<'tag, T> RefMut<'tag, T> {
         f(immutable, Token(PhantomData));
         self
     }
+
+    pub fn split(self) -> (Pointer<'tag>, Write<'tag, T>) {
+        (self.pointer, self.permission)
+    }
 }
 
 pub struct RefMut<'tag, T> {
     pointer: Pointer<'tag>,
     permission: Write<'tag, T>,
-    _token: Token<'tag>,
 }
 
 #[cfg(test)]

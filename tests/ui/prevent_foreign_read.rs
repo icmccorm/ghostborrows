@@ -1,4 +1,4 @@
-use ghost_borrows::*;
+use ghostborrows::*;
 
 fn main() {
     OwnedValue::new(1).borrow_mut(|r1, token1| {
