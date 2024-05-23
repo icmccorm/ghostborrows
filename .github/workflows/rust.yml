@@ -9,11 +9,19 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     env:
       RUSTFLAGS: -D warnings
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:    
     - uses: actions/checkout@v4
     - name: Build
@@ -26,3 +34,16 @@ jobs:
       run: MIRIFLAGS="-Zmiri-tree-borrows" cargo miri test --verbose refs::tests
     - name: UI Tests
       run: cargo test --verbose ui
+    - name: Generate Docs
+      run: cargo doc --no-deps && echo "<meta http-equiv=\"refresh\" content=\"0; url=ghostborrows\">" > target/doc/index.html
+    - name: Setup Pages
+      uses: actions/configure-pages@v5
+    - name: Upload artifact
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: "target/doc"
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
+
+  
