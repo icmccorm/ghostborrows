@@ -8,6 +8,7 @@ pub struct Token<'tag, T>(pub(crate) PhantomData<*mut &'tag T>);
 pub trait AllowsRead<'tag, T> {}
 pub trait AllowsWrite<'tag, T> {}
 
+#[derive(Copy, Clone)]
 pub struct Reserved<'tag, T>(pub(crate) PhantomData<*mut &'tag T>);
 
 impl<'tag, T> AllowsRead<'tag, T> for Reserved<'tag, T> {}

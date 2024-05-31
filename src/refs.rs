@@ -202,6 +202,15 @@ impl<'tag, T> RefReserved<'tag, T> {
     }
 }
 
+impl<'tag, T> From<(Pointer<'tag>, Reserved<'tag, T>)> for RefReserved<'tag, T> {
+    fn from(value: (Pointer<'tag>, Reserved<'tag, T>)) -> Self {
+        RefReserved {
+            pointer: value.0,
+            permission: value.1,
+        }
+    }
+}
+
 pub struct RefMut<'tag, T> {
     pointer: Pointer<'tag>,
     permission: Write<'tag, T>,
@@ -327,4 +336,7 @@ mod tests {
             let _val = *y;
         });
     }
+
+    #[test]
+    fn alternate_writes_raw() {}
 }
