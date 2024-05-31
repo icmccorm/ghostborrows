@@ -1,4 +1,4 @@
-use crate::perms::*;
+use crate::perms::{AllowsRead, AllowsWrite, Dealloc, Read, Reserved, Tag, Token, Write};
 use std::alloc::{alloc, dealloc, Layout};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
@@ -9,13 +9,15 @@ pub struct Pointer<'tag> {
     data: *mut u8,
 }
 impl<'tag> Pointer<'tag> {
+    #[must_use]
     pub fn as_ref<T>(&self, _: &dyn AllowsRead<'tag, T>) -> &T {
         unsafe { &*(self.data as *const T) }
     }
 
     #[allow(clippy::mut_from_ref)]
+    #[must_use]
     pub fn as_mut<T>(&self, _: &mut dyn AllowsWrite<'tag, T>) -> &mut T {
-        unsafe { &mut *(self.data as *mut T) }
+        unsafe { &mut *(self.data.cast::<T>()) }
     }
 }
 
@@ -43,7 +45,7 @@ impl<'tag, T> Value<'tag, T> {
         let layout = Layout::new::<T>();
         unsafe {
             let data = alloc(layout);
-            std::ptr::write(data as *mut T, value);
+            std::ptr::write(data.cast::<T>(), value);
             Value {
                 pointer: Pointer {
                     _tag: Tag(PhantomData),
@@ -54,6 +56,7 @@ impl<'tag, T> Value<'tag, T> {
             }
         }
     }
+    #[must_use]
     pub fn into_raw(self) -> (Pointer<'tag>, Write<'tag, T>, Dealloc<'tag, T>) {
         let pointer = Pointer {
             _tag: Tag(PhantomData),
@@ -65,15 +68,16 @@ impl<'tag, T> Value<'tag, T> {
         (pointer, permission, dealloc)
     }
 
+    #[must_use]
     pub fn from_raw(
         pointer: Pointer<'tag>,
         permission: Write<'tag, T>,
-        _dealloc: Dealloc<'tag, T>,
+        dealloc: Dealloc<'tag, T>,
     ) -> Self {
         Value {
             pointer,
             permission,
-            _dealloc,
+            _dealloc: dealloc,
         }
     }
 
@@ -127,7 +131,7 @@ impl<'tag, T> From<&T> for Ref<'tag, T> {
             permission: Read(PhantomData),
             pointer: Pointer {
                 _tag: Tag(PhantomData),
-                data: t as *const T as *mut u8,
+                data: std::ptr::from_ref::<T>(t) as *mut u8,
             },
         }
     }
@@ -144,6 +148,7 @@ impl<'tag, T> Ref<'tag, T> {
         };
         f(immutable);
     }
+    #[must_use]
     pub fn split(self) -> (Pointer<'tag>, Read<'tag, T>) {
         (self.pointer, self.permission)
     }
@@ -162,6 +167,8 @@ impl<'tag, T> Deref for RefReserved<'tag, T> {
 }
 
 impl<'tag, T> RefReserved<'tag, T> {
+    #[must_use]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn activate(self, _token: Token<'tag, T>) -> RefMut<'tag, T> {
         RefMut {
             permission: Write(Token(PhantomData)),
@@ -184,9 +191,12 @@ impl<'tag, T> RefReserved<'tag, T> {
         token
     }
 
+    #[must_use]
     pub fn pointer(&self) -> Pointer<'tag> {
         self.pointer
     }
+
+    #[must_use]
     pub fn split(&self) -> (Pointer<'tag>, Reserved<'tag, T>) {
         (self.pointer, Reserved(PhantomData))
     }
@@ -204,19 +214,26 @@ impl<'tag, T> Deref for RefMut<'tag, T> {
     }
 }
 
+impl<'tag, T> DerefMut for RefMut<'tag, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.pointer.as_mut(&mut self.permission)
+    }
+}
+
 impl<'tag, T> From<&mut T> for RefMut<'tag, T> {
     fn from(t: &mut T) -> Self {
         RefMut {
             permission: Write(Token(PhantomData)),
             pointer: Pointer {
                 _tag: Tag(PhantomData),
-                data: t as *mut T as *mut u8,
+                data: std::ptr::from_mut::<T>(t).cast::<u8>(),
             },
         }
     }
 }
 
 impl<'tag, T> RefMut<'tag, T> {
+    #[must_use]
     pub fn borrow_mut(
         self,
         f: impl for<'retag> FnOnce(RefReserved<'retag, T>, Token<'retag, T>),
@@ -232,12 +249,9 @@ impl<'tag, T> RefMut<'tag, T> {
         self
     }
 
+    #[must_use]
     pub fn split(self) -> (Pointer<'tag>, Write<'tag, T>) {
         (self.pointer, self.permission)
-    }
-
-    pub fn as_mut(&mut self) -> &mut T {
-        self.pointer.as_mut(&mut self.permission)
     }
 }
 
@@ -259,7 +273,7 @@ mod tests {
         value.borrow_mut(|ptr, token| {
             assert!(*ptr == 1);
             let mut ptr_mut = ptr.activate(token);
-            *ptr_mut.as_mut() = 3;
+            *ptr_mut = 3;
             assert!(*ptr_mut == 3);
         });
     }
@@ -296,7 +310,7 @@ mod tests {
                 /* We allow foreign reads */
                 assert!(*r1 == *r2);
                 let mut r2_mut = r2.activate(token2);
-                *r2_mut.as_mut() = 2;
+                *r2_mut = 2;
                 assert!(*r2_mut == 2);
             });
         });
@@ -313,5 +327,4 @@ mod tests {
             let _val = *y;
         });
     }
-
 }
