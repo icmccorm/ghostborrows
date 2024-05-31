@@ -14,7 +14,7 @@ impl<'tag> Pointer<'tag> {
     }
 
     #[allow(clippy::mut_from_ref)]
-    pub fn as_mut<T>(&self, _: &dyn AllowsWrite<'tag, T>) -> &mut T {
+    pub fn as_mut<T>(&self, _: &mut dyn AllowsWrite<'tag, T>) -> &mut T {
         unsafe { &mut *(self.data as *mut T) }
     }
 }
@@ -34,7 +34,7 @@ impl<'tag, T> Deref for Value<'tag, T> {
 
 impl<'tag, T> DerefMut for Value<'tag, T> {
     fn deref_mut(&mut self) -> &mut T {
-        self.pointer.as_mut(&self.permission)
+        self.pointer.as_mut(&mut self.permission)
     }
 }
 
@@ -87,6 +87,7 @@ impl<'tag, T> Value<'tag, T> {
         };
         f(immutable);
     }
+
     pub fn borrow_mut(&self, f: impl for<'retag> FnOnce(RefReserved<'retag, T>, Token<'retag, T>)) {
         let immutable = RefReserved {
             permission: Reserved(PhantomData),
@@ -131,6 +132,7 @@ impl<'tag, T> From<&T> for Ref<'tag, T> {
         }
     }
 }
+
 impl<'tag, T> Ref<'tag, T> {
     pub fn borrow(&self, f: impl for<'retag> FnOnce(Ref<'retag, T>)) {
         let immutable = Ref {
@@ -182,8 +184,11 @@ impl<'tag, T> RefReserved<'tag, T> {
         token
     }
 
-    pub fn split(self) -> (Pointer<'tag>, Reserved<'tag, T>) {
-        (self.pointer, self.permission)
+    pub fn pointer(&self) -> Pointer<'tag> {
+        self.pointer
+    }
+    pub fn split(&self) -> (Pointer<'tag>, Reserved<'tag, T>) {
+        (self.pointer, Reserved(PhantomData))
     }
 }
 
@@ -231,8 +236,8 @@ impl<'tag, T> RefMut<'tag, T> {
         (self.pointer, self.permission)
     }
 
-    pub fn as_mut(&self) -> &mut T {
-        self.pointer.as_mut(&self.permission)
+    pub fn as_mut(&mut self) -> &mut T {
+        self.pointer.as_mut(&mut self.permission)
     }
 }
 
@@ -253,7 +258,7 @@ mod tests {
         let value = Value::new(1);
         value.borrow_mut(|ptr, token| {
             assert!(*ptr == 1);
-            let ptr_mut = ptr.activate(token);
+            let mut ptr_mut = ptr.activate(token);
             *ptr_mut.as_mut() = 3;
             assert!(*ptr_mut == 3);
         });
@@ -290,10 +295,23 @@ mod tests {
             r1.borrow_mut(token1, |r2, token2| {
                 /* We allow foreign reads */
                 assert!(*r1 == *r2);
-                let r2_mut = r2.activate(token2);
+                let mut r2_mut = r2.activate(token2);
                 *r2_mut.as_mut() = 2;
                 assert!(*r2_mut == 2);
             });
         });
     }
+
+    #[test]
+    fn unused_borrow() {
+        let value = Value::new(0);
+        value.borrow_mut(|x, token| {
+            let mut_x = x.activate(token);
+            let (pointer, mut perm) = mut_x.split();
+            let y = pointer.as_ref(&perm);
+            let _z = pointer.as_mut(&mut perm);
+            let _val = *y;
+        });
+    }
+
 }

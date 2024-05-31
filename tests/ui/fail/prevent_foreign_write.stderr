@@ -1,3 +1,12 @@
+error[E0596]: cannot borrow `activated` as mutable, as it is not declared as mutable
+ --> tests/ui/fail/prevent_foreign_write.rs:7:14
+  |
+5 |         let activated = r1.activate(token1);
+  |             --------- help: consider changing this to be mutable: `mut activated`
+6 |         activated.borrow_mut(|_, _| {
+7 |             *activated.as_mut() = 2;
+  |              ^^^^^^^^^ cannot borrow as mutable
+
 error[E0382]: borrow of moved value: `activated`
  --> tests/ui/fail/prevent_foreign_write.rs:6:30
   |

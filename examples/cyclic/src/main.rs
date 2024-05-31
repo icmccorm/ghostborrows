@@ -12,14 +12,12 @@ pub struct Parent<'p, 'c> {
     pub child: Option<(Pointer<'c>, Write<'c, Child<'p>>, Dealloc<'c, Child<'p>>)>,
 }
 
-pub fn init<'p>(parent: Pointer<'p>, perm: &Write<'p, Parent<'p, '_>>) {
+pub fn init(parent: Pointer<'p>, perm: &Write<'p, Parent<'p, '_>>) {
     let child_allocation = Value::new(Child {
         child_data: 0,
         parent,
     });
-
     let (child, child_perm, child_dealloc) = child_allocation.into_raw();
-
     parent.as_mut(perm).child = Some((child, child_perm, child_dealloc));
 }
 
