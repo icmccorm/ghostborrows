@@ -1,0 +1,24 @@
+error[E0521]: borrowed data escapes outside of closure
+  --> tests/ui/fail/self_referential.rs:10:24
+   |
+8  |         let mut x = x.activate(token_x);
+   |             ----- `x` declared here, outside of the closure body
+9  |         x.0.borrow_mut(|r, _| {
+   |                         - `r` is a reference that is only valid in the closure body
+10 |             x.1 = Some(r.split());
+   |                        ^^^^^^^^^ `r` escapes the closure body here
+   |
+   = note: requirement occurs because of the type `RefReserved<'_, i32>`, which makes the generic argument `'_` invariant
+   = note: the struct `RefReserved<'tag, T>` is invariant over the parameter `'tag`
+   = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance
+
+error[E0502]: cannot borrow `x` as mutable because it is also borrowed as immutable
+  --> tests/ui/fail/self_referential.rs:9:24
+   |
+9  |         x.0.borrow_mut(|r, _| {
+   |         -   ---------- ^^^^^^ mutable borrow occurs here
+   |         |   |
+   |         |   immutable borrow later used by call
+   |         immutable borrow occurs here
+10 |             x.1 = Some(r.split());
+   |             - second borrow occurs due to use of `x` in closure

@@ -1,7 +1,7 @@
 error[E0308]: mismatched types
-  --> tests/ui/fail/write_during_2phase.rs:20:29
+  --> tests/ui/fail/write_during_2phase.rs:24:29
    |
-20 |             *pointer.as_mut(perm) += 1;
+24 |             *pointer.as_mut(perm) += 1;
    |                      ------ ^^^^ expected `&mut dyn AllowsWrite<'_, _>`, found `Reserved<'_, {integer}>`
    |                      |
    |                      arguments to this method are incorrect
